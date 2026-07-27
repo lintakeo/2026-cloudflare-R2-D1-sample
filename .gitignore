@@ -1,0 +1,15 @@
+node_modules/
+
+# wrangler dev 的本機狀態（本機版的 D1 資料庫與 R2 檔案都放這裡）
+.wrangler/
+
+# wrangler secret / 本機環境變數，絕對不要進版控
+.dev.vars
+.env
+.env.*
+
+# 產生的型別定義
+worker-configuration.d.ts
+
+.DS_Store
+*.log

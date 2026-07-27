@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一個 Worker，四種身分 — Cloudflare Workers + D1 + R2 教學範例</title>
+<meta name="description" content="用一支 Cloudflare Worker 同時當靜態網站主機、API 伺服器、D1 資料庫用戶端與 R2 物件儲存閘道。頁面內建可操作的待辦清單與圖片上傳，並即時顯示每個請求走過的路徑。">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230A0F16'/%3E%3Cpath d='M7 20h7l3-8 3 12 3-8h2' stroke='%23F6821F' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<a class="skip-link" href="#demo">跳到 Demo</a>
+
+<header class="topbar">
+  <div class="topbar-brand">
+    <span class="signal" id="signal" data-state="idle" aria-hidden="true"></span>
+    <span class="topbar-name">cf-todo-demo</span>
+  </div>
+
+  <nav class="topbar-nav" aria-label="頁面章節">
+    <a href="#routes">路徑</a>
+    <a href="#demo">Demo</a>
+    <a href="#bindings">綁定</a>
+    <a href="#deploy">部署</a>
+  </nav>
+
+  <div class="topbar-auth" id="auth-slot"></div>
+</header>
+
+<main>
+
+  <!-- ── Hero ────────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <p class="eyebrow">Cloudflare Workers · D1 · R2</p>
+
+    <h1 class="hero-title">
+      一個 Worker，<br>
+      <em>四種身分。</em>
+    </h1>
+
+    <p class="hero-lede">
+      你正在看的這一頁、等一下輸入的待辦、上傳的那張圖，都由同一支 Worker 決定去向。
+      下面這條軌跡記錄每一次真實請求：它經過哪些綁定、各花幾毫秒、在哪個節點執行。
+    </p>
+
+    <!-- 這一塊是整頁的主角：把看不見的路由變成看得見的資料 -->
+    <section class="trace" id="trace" aria-labelledby="trace-title">
+      <header class="trace-head">
+        <h2 class="trace-title" id="trace-title">Edge Trace</h2>
+        <p class="trace-meta">
+          <span class="trace-meta-label">節點</span>
+          <span class="trace-meta-value" id="trace-colo">—</span>
+        </p>
+      </header>
+
+      <ol class="trace-list" id="trace-list" aria-live="polite" aria-relevant="additions"></ol>
+
+      <p class="trace-hint" id="trace-hint">在下方 Demo 操作，這裡會即時記錄每一次請求。</p>
+    </section>
+  </section>
+
+  <!-- ── 路由表 ──────────────────────────────────────────────────────── -->
+  <section class="section" id="routes" aria-labelledby="routes-title">
+    <div class="section-head">
+      <p class="section-index">路徑</p>
+      <h2 class="section-title" id="routes-title">四條路徑，一支 Worker</h2>
+      <p class="section-lede">
+        <code>wrangler.jsonc</code> 裡只寫了一行 <code>run_worker_first: ["/api/*"]</code>。
+        這一行就是下面所有分岔的來源 —— 符合的走 Worker，不符合的直接由邊緣節點送出檔案。
+      </p>
+    </div>
+
+    <ul class="routes">
+      <li class="route" data-route="GET /">
+        <p class="route-path"><span class="verb">GET</span> /</p>
+        <p class="route-chain">
+          <span class="chip" data-node="CLIENT">瀏覽器</span>
+          <span class="chip" data-node="ASSETS">靜態資產</span>
+        </p>
+        <p class="route-note">
+          路徑不符合 <code>/api/*</code>，邊緣節點直接送出 <code>public/</code> 裡的檔案。
+          Worker 沒有被呼叫 —— 不佔用呼叫次數，也沒有冷啟動。
+        </p>
+      </li>
+
+      <li class="route" data-route="GET /api/todos">
+        <p class="route-path"><span class="verb">GET</span> /api/todos</p>
+        <p class="route-chain">
+          <span class="chip" data-node="CLIENT">瀏覽器</span>
+          <span class="chip" data-node="WORKER">Worker</span>
+          <span class="chip" data-node="D1">D1</span>
+        </p>
+        <p class="route-note">
+          Worker 用 <code>prepare().bind().all()</code> 查出這個帳號的待辦。
+          D1 是跑在 Cloudflare 上的 SQLite，語法就是你熟悉的那個 SQL。
+        </p>
+      </li>
+
+      <li class="route" data-route="PUT /api/todos/:id/image">
+        <p class="route-path"><span class="verb">PUT</span> /api/todos/:id/image</p>
+        <p class="route-chain">
+          <span class="chip" data-node="CLIENT">瀏覽器</span>
+          <span class="chip" data-node="WORKER">Worker</span>
+          <span class="chip" data-node="D1">D1</span>
+          <span class="chip" data-node="R2">R2</span>
+        </p>
+        <p class="route-note">
+          先查 D1 確認這筆待辦是你的，圖片本體才寫進 R2，最後把物件鍵回填 D1。
+          二進位檔案不要塞進資料庫 —— D1 單列上限 2 MB，R2 單物件上限 5 TiB。
+        </p>
+      </li>
+
+      <li class="route" data-route="GET /api/images/*">
+        <p class="route-path"><span class="verb">GET</span> /api/images/*</p>
+        <p class="route-chain">
+          <span class="chip" data-node="CLIENT">瀏覽器</span>
+          <span class="chip" data-node="WORKER">Worker</span>
+          <span class="chip" data-node="R2">R2</span>
+        </p>
+        <p class="route-note">
+          Bucket 全程保持私有。圖片一律由 Worker 從 R2 讀出來再回傳，
+          不需要開啟 <code>r2.dev</code> 公開網址。
+        </p>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ── Demo ────────────────────────────────────────────────────────── -->
+  <section class="section" id="demo" aria-labelledby="demo-title">
+    <div class="section-head">
+      <p class="section-index">Demo</p>
+      <h2 class="section-title" id="demo-title">試一下</h2>
+      <p class="section-lede">
+        每個動作都是一次真實請求。做完馬上往上看 Edge Trace，
+        對照這次走的是 D1、R2，還是兩個都走。
+      </p>
+    </div>
+
+    <!-- 錯誤訊息。刻意放在 gate 與 workbench 之外，
+         否則未登入時的錯誤（例如 Google 來源沒授權）會被一起藏起來。 -->
+    <p class="feedback" id="feedback" role="status" hidden></p>
+
+    <!-- 未登入時顯示 -->
+    <div class="gate" id="gate" hidden>
+      <h3 class="gate-title">先登入才能寫入資料</h3>
+      <p class="gate-note">
+        待辦與圖片都會標上你的 Google 帳號編號，各自分開存放。
+      </p>
+      <div class="gate-actions" id="gate-actions"></div>
+    </div>
+
+    <!-- 登入後顯示 -->
+    <div class="workbench" id="workbench" hidden>
+      <form class="composer" id="composer" autocomplete="off">
+        <label class="sr-only" for="new-todo">新的待辦</label>
+        <input
+          class="composer-input"
+          id="new-todo"
+          name="title"
+          type="text"
+          maxlength="200"
+          placeholder="要做什麼？"
+          required>
+        <button class="btn btn-primary" type="submit" id="composer-submit">新增</button>
+      </form>
+
+      <ul class="todos" id="todos"></ul>
+
+      <div class="empty" id="empty" hidden>
+        <p class="empty-title">清單是空的。</p>
+        <p class="empty-note">在上面輸入第一筆待辦，D1 就會多一列資料。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 三個綁定 ────────────────────────────────────────────────────── -->
+  <section class="section" id="bindings" aria-labelledby="bindings-title">
+    <div class="section-head">
+      <p class="section-index">綁定</p>
+      <h2 class="section-title" id="bindings-title">三個綁定，三行程式碼</h2>
+      <p class="section-lede">
+        綁定（binding）是 Worker 取用雲端資源的方式。在 <code>wrangler.jsonc</code> 宣告，
+        在程式裡就變成 <code>env</code> 上的一個物件 —— 沒有連線字串，也沒有金鑰要保管。
+      </p>
+    </div>
+
+    <div class="cards">
+      <article class="card" data-node="ASSETS">
+        <h3 class="card-title">Static Assets</h3>
+        <p class="card-binding"><code>env.ASSETS</code></p>
+        <p class="card-desc">
+          把 <code>public/</code> 整個目錄放上 Cloudflare 的邊緣網路。
+          HTML、CSS、JS 直接從離使用者最近的節點送出。
+        </p>
+        <pre class="card-code"><code>// wrangler.jsonc
+"assets": {
+  "directory": "./public",
+  "run_worker_first": ["/api/*"]
+}</code></pre>
+        <p class="card-limit">單檔 25 MiB · 免費方案 20,000 個檔案</p>
+      </article>
+
+      <article class="card" data-node="D1">
+        <h3 class="card-title">D1</h3>
+        <p class="card-binding"><code>env.DB</code></p>
+        <p class="card-desc">
+          Cloudflare 託管的 SQLite。適合存結構化、查得到、量不大的資料 ——
+          這裡存的是待辦文字與完成狀態。
+        </p>
+        <pre class="card-code"><code>await env.DB
+  .prepare('SELECT * FROM todos WHERE user_id = ?')
+  .bind(userId)
+  .all();</code></pre>
+        <p class="card-limit">免費方案 500 MB · 單列上限 2 MB</p>
+      </article>
+
+      <article class="card" data-node="R2">
+        <h3 class="card-title">R2</h3>
+        <p class="card-binding"><code>env.BUCKET</code></p>
+        <p class="card-desc">
+          相容 S3 的物件儲存，沒有流量傳出費用。
+          適合圖片、影片、備份 —— 任何不該塞進資料庫的東西。
+        </p>
+        <pre class="card-code"><code>await env.BUCKET.put(key, file, {
+  httpMetadata: {
+    contentType: file.type
+  }
+});</code></pre>
+        <p class="card-limit">單物件 5 TiB · 物件鍵長度 1024 bytes</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── 部署 ────────────────────────────────────────────────────────── -->
+  <section class="section" id="deploy" aria-labelledby="deploy-title">
+    <div class="section-head">
+      <p class="section-index">部署</p>
+      <h2 class="section-title" id="deploy-title">從空資料夾到線上網址</h2>
+      <p class="section-lede">
+        以下五步有先後順序：資源要先存在，設定檔才填得完；設定檔填完，Cloudflare 才接得上你的 repo。
+      </p>
+    </div>
+
+    <ol class="steps">
+      <li class="step">
+        <p class="step-no">01</p>
+        <div class="step-body">
+          <h3 class="step-title">建立 D1 與 R2</h3>
+          <pre class="step-code"><code>npx wrangler d1 create todo-db
+npx wrangler r2 bucket create todo-images</code></pre>
+          <p class="step-note">R2 需要先在 Cloudflare 後台啟用（要綁付款方式，免費額度仍然免費）。D1 不用。</p>
+        </div>
+      </li>
+
+      <li class="step">
+        <p class="step-no">02</p>
+        <div class="step-body">
+          <h3 class="step-title">把 database_id 填回設定檔</h3>
+          <pre class="step-code"><code>// wrangler.jsonc
+"d1_databases": [{
+  "binding": "DB",
+  "database_name": "todo-db",
+  "database_id": "上一步印出來的那串 UUID"
+}]</code></pre>
+          <p class="step-note">R2 沒有 id，用 bucket 名稱對應就行。</p>
+        </div>
+      </li>
+
+      <li class="step">
+        <p class="step-no">03</p>
+        <div class="step-body">
+          <h3 class="step-title">建立資料表</h3>
+          <pre class="step-code"><code>npx wrangler d1 migrations apply todo-db --remote</code></pre>
+          <p class="step-note">少了 <code>--remote</code> 就只會套用到本機那份 SQLite，線上依然是空的 —— 這是最常見的錯誤。</p>
+        </div>
+      </li>
+
+      <li class="step">
+        <p class="step-no">04</p>
+        <div class="step-body">
+          <h3 class="step-title">推上 GitHub</h3>
+          <pre class="step-code"><code>git init &amp;&amp; git add . &amp;&amp; git commit -m "init"
+git remote add origin &lt;你的 repo&gt;
+git push -u origin main</code></pre>
+          <p class="step-note"><code>.gitignore</code> 已經擋掉 <code>.wrangler/</code> 與 <code>.dev.vars</code>。</p>
+        </div>
+      </li>
+
+      <li class="step">
+        <p class="step-no">05</p>
+        <div class="step-body">
+          <h3 class="step-title">在 Cloudflare 接上 repo</h3>
+          <p class="step-note">
+            後台 <strong>Workers &amp; Pages → Create → Workers → Import a repository</strong>，
+            選好 repo 後 build 指令留空、deploy 指令用 <code>npx wrangler deploy</code>。
+            接好之後，每次 push 到 main 都會自動部署。
+          </p>
+        </div>
+      </li>
+    </ol>
+
+    <aside class="callout">
+      <h3 class="callout-title">關於 Google 登入</h3>
+      <p>
+        到 Google Cloud Console 建一組 <strong>OAuth 2.0 用戶端 ID</strong>（類型選「網頁應用程式」），
+        把部署後的網址填進「已授權的 JavaScript 來源」，再把用戶端 ID 貼進
+        <code>wrangler.jsonc</code> 的 <code>vars.GOOGLE_CLIENT_ID</code>。
+        只需要用戶端 ID，不需要用戶端密鑰。
+      </p>
+      <p>
+        沒設定也沒關係 —— 頁面會改用本機示範帳號，D1 與 R2 的部分照樣能完整操作。
+      </p>
+    </aside>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p class="footer-line">
+    這一頁的 HTML 由 Cloudflare 邊緣節點直接送出，Worker 並未執行。
+    你剛剛新增的每一筆待辦都在 D1，每一張圖都在 R2。
+  </p>
+  <p class="footer-meta">cf-todo-demo · Workers + D1 + R2 教學範例</p>
+</footer>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

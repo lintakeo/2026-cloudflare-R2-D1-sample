@@ -1,0 +1,23 @@
+{
+  "name": "cf-todo-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Workers + D1 + R2 教學範例：單頁 Landing Page 內建待辦清單與圖片上傳",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check": "node scripts/check-setup.mjs",
+    "predeploy": "npm run check",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "db:list": "wrangler d1 execute DB --remote --command \"SELECT id, title, done, image_key FROM todos ORDER BY created_at DESC LIMIT 20\"",
+    "tail": "wrangler tail"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}
