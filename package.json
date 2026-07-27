@@ -10,6 +10,8 @@
     "prepare:config": "node scripts/apply-build-vars.mjs && npm run check",
     "predeploy": "npm run prepare:config",
     "deploy": "wrangler deploy",
+    "predeploy:migrate": "npm run prepare:config",
+    "deploy:migrate": "wrangler d1 migrations apply DB --remote && wrangler deploy",
     "preupload": "npm run prepare:config",
     "upload": "wrangler versions upload",
     "db:local": "wrangler d1 migrations apply DB --local",

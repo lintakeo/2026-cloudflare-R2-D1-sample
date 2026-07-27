@@ -233,13 +233,35 @@ git push -u origin main
 
 ### 關於 migration
 
-Workers Builds **不會**自動套用 D1 migration。新增 migration 檔之後，記得在本機手動跑一次：
+Workers Builds **不會**自動套用 D1 migration。新增 migration 檔之後，要自己跑一次：
 
 ```bash
 npm run db:remote
 ```
 
-也可以把 Deploy command 改成 `npx wrangler d1 migrations apply DB --remote && npm run deploy`，讓部署順便跑 migration。這取決於建置環境的 API token 有沒有 D1 寫入權限，如果失敗就退回手動執行。
+#### 想讓部署順便跑 migration
+
+把後台的**部署命令**改成：
+
+```
+npm run deploy:migrate
+```
+
+這個 script 的順序是：套用組建變數 → 設定檢查 → `d1 migrations apply --remote` → `deploy`。
+必須是這個順序 —— migration 需要設定檔裡有真的 `database_id`，那是組建變數注入之後才有的。
+
+**但預設不建議這樣做，原因有三個：**
+
+1. **回滾不對稱。** `wrangler rollback` 會還原程式碼，但**不會還原 schema**。
+   同時改了兩者的那次部署一旦回滾，你會得到「新 schema + 舊程式碼」。
+2. **預覽分支會動到正式資料庫。** D1 binding 只有一個，開了「非生產分支的組建」之後，
+   任何分支的建置都會對同一個資料庫跑 migration。所以 `upload`（版本命令）**刻意不含** migration。
+3. **建置權杖的權限範圍沒有文件。** Cloudflare 沒有說明 Workers Builds 的 API 權杖能不能寫 D1。
+   不能的話建置會失敗 —— 只能實測。
+
+這個範例的 migration 全是 `CREATE TABLE IF NOT EXISTS`，重跑無害，所以自己上課用是安全的。
+但學員會把這個模式帶到下一個專案，那時的 `ALTER TABLE` / `DROP COLUMN` 就不是這麼一回事了。
+教學上建議示範「部署與 migration 分開」，再說明什麼情況可以合併。
 
 ---
 
@@ -477,7 +499,8 @@ npm run db:list
 | `npm run dev` | 本機開發伺服器 |
 | `npm run check` | 檢查 `wrangler.jsonc` 該換的值都換過了 |
 | `npm run deploy` | 部署。`predeploy` 會先套用組建變數，再跑 `check` |
-| `npm run upload` | 上傳版本但不切流量（預覽分支用）。同樣會先跑 `prepare:config` |
+| `npm run deploy:migrate` | 同上，但在部署前多跑一次 `d1 migrations apply --remote`（取捨見上面〈關於 migration〉） |
+| `npm run upload` | 上傳版本但不切流量（預覽分支用）。同樣會先跑 `prepare:config`，但**不含** migration |
 | `npm run db:local` | 套用 migration 到本機 |
 | `npm run db:remote` | 套用 migration 到線上 |
 | `npm run db:list` | 查看線上最近 20 筆待辦 |
