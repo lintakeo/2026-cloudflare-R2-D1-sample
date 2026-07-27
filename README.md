@@ -135,6 +135,31 @@ npm run db:remote      # 等同 npx wrangler d1 migrations apply DB --remote
 > GOOGLE_CLIENT_ID=另一組本機專用的 ID
 > ```
 
+### 不想把用戶端 ID 提交進 repo 的話
+
+先確認一件事：**用戶端 ID 不是機密**。它一定會出現在瀏覽器裡，Google 的設計就是如此
+（真正的機密是用戶端密鑰，這個專案完全不用）。直接填進 `wrangler.jsonc` 提交完全沒問題。
+
+會想把它拿掉，通常是因為要讓 repo 保持乾淨的範本狀態（例如發給學生）。這時有三條路：
+
+| 設定在哪 | 要不要改 `wrangler.jsonc` | 結果 |
+|---|---|---|
+| **Settings → Build → Build variables**（推薦） | 不用 | 部署前由 `apply-build-vars.mjs` 寫進設定檔，正常生效 |
+| Settings → Variables and Secrets → **Secret** | 要，得刪掉 `vars` 那一行 | 可行。secret 不會被部署刪除 |
+| Settings → Variables and Secrets → **Variable** | 要，得刪掉 `vars` 那一行 | 不刪的話每次部署都被蓋回空字串 |
+
+**為什麼「執行階段的變數」反而不能用**，是這個專案最容易踩的一個坑：
+
+`GOOGLE_CLIENT_ID` 確實是執行時才用到的值，直覺會想設在執行階段那一區。
+但只要 `wrangler.jsonc` 的 `vars` 還留著 `"GOOGLE_CLIENT_ID": ""`，部署就會把它蓋回空字串 ——
+`wrangler deploy --help` 寫得很清楚：
+
+> `--keep-vars`：When not used (or set to false), Wrangler will **delete all vars** before setting
+> those found in the Wrangler configuration. ... Note that **secrets are never deleted** by deployments.
+
+也就是說：**設定的位置**跟**使用的時機**是兩回事。走組建變數這條路，值在部署前就寫進設定檔了，
+不會被清掉，也不必為了它去動 `wrangler.jsonc`。
+
 ---
 
 ## 四、部署：讓 GitHub 推送自動觸發
