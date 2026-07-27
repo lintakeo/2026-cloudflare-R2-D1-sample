@@ -306,13 +306,15 @@ git push -u origin main</code></pre>
           <h3 class="step-title">在 Cloudflare 接上 repo</h3>
           <p class="step-note">
             後台 <strong>Workers &amp; Pages → Create → Workers → Import a repository</strong>，
-            選好 repo 後 build 指令留空，deploy 指令填 <code>npm run deploy</code>。
+            選好 repo 後 build 指令留空，
+            <strong>部署指令改成 <code>npm run deploy</code>、版本指令改成 <code>npm run upload</code></strong>。
             接好之後，每次 push 到 main 都會自動部署。
           </p>
           <p class="step-note">
-            用 <code>npm run deploy</code> 而不是 <code>npx wrangler deploy</code>，是為了讓
-            <code>predeploy</code> 的設定檢查也在雲端跑一次 —— 忘記換 <code>database_id</code> 時
-            建置會直接停下來說明原因，而不是部署成功、線上卻連不到資料庫。
+            這兩個指令一定要改，是這裡最容易漏掉的一步。Cloudflare 預設的
+            <code>npx wrangler deploy</code> 會直接呼叫 wrangler，<strong>不觸發 npm 的
+            <code>predeploy</code> 掛勾</strong> —— 設定檢查與組建變數注入都不會執行，
+            結果就是變數明明設好了，部署卻還是失敗在 <code>database_id</code>。
           </p>
           <p class="step-note">
             同一頁的 <strong>Build variables and secrets</strong> 可以設

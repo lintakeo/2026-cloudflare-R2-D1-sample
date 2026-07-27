@@ -7,8 +7,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "node scripts/check-setup.mjs",
-    "predeploy": "node scripts/apply-build-vars.mjs && npm run check",
+    "prepare:config": "node scripts/apply-build-vars.mjs && npm run check",
+    "predeploy": "npm run prepare:config",
     "deploy": "wrangler deploy",
+    "preupload": "npm run prepare:config",
+    "upload": "wrangler versions upload",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",
     "db:list": "wrangler d1 execute DB --remote --command \"SELECT id, title, done, image_key FROM todos ORDER BY created_at DESC LIMIT 20\"",

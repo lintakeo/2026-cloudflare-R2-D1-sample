@@ -180,17 +180,22 @@ git push -u origin main
 
 選好 repo 之後：
 
-| 欄位 | 填什麼 |
-|------|-------|
-| Build command | 留空（這個專案沒有建置步驟） |
-| Deploy command | `npm run deploy` |
-| Root directory | 留空（除非 repo 裡還有其他專案） |
+| 欄位 | 預設值 | **要改成** |
+|------|-------|---------|
+| 組建命令 Build command | 無 | 維持空白（這個專案沒有建置步驟） |
+| 部署命令 Deploy command | `npx wrangler deploy` | **`npm run deploy`** |
+| 版本命令 Version command | `npx wrangler versions upload` | **`npm run upload`** |
+| 根目錄 Root directory | `/` | 維持 |
 
 接好之後，每次 push 到 `main` 都會自動部署。
 
-> Deploy command 用 `npm run deploy` 而不是 `npx wrangler deploy`，是為了讓 `predeploy` 的設定檢查
-> 也在 CI 跑一次 —— 忘記換 `database_id` 的話，建置會直接停下來並告訴你原因，
-> 而不是部署成功、線上卻連不到資料庫。
+> **這兩個指令一定要改**，而且是這個範例最容易漏掉的一步。
+>
+> Cloudflare 預設的 `npx wrangler deploy` 直接呼叫 wrangler，**不會觸發 npm 的 `predeploy` 掛勾** ——
+> 設定檢查與組建變數注入都不會執行。症狀是：組建變數明明設好了，部署卻仍然失敗在
+> `binding DB of type d1 must have a valid database_id`，而且日誌裡看不到任何腳本輸出。
+>
+> 版本命令是「非生產分支的組建」用的（預覽部署），同樣的道理，也要改成 `npm run upload`。
 
 ### 3.（選用）用組建變數代替寫死在設定檔
 
@@ -442,6 +447,8 @@ curl -X POST http://localhost:8787/api/todos \
 |------|------|------|
 | `Wrangler requires at least Node.js v22.0.0` | Node 版本太舊 | `nvm install 22 && nvm use 22`（或用 Volta / fnm） |
 | `npm install` 出現 `EBADENGINE` 警告 | 同上 | 同上。這個警告不會中斷安裝，但之後 wrangler 一定會失敗 |
+| 組建變數設好了，部署仍失敗在 `must have a valid database_id`，日誌看不到腳本輸出 | 部署命令還是預設的 `npx wrangler deploy`，沒觸發 `predeploy` | 後台改成 `npm run deploy`（版本命令改 `npm run upload`） |
+| 後台橫幅要你把 `wrangler.jsonc` 的 `name` 改成 repo 名稱 | Workers Builds 以它建立的 Worker 名稱為準，設定檔對不上就會提醒 | 設組建變數 `CF_WORKER_NAME` 為那個名稱即可，不必改 repo |
 | `no such table: todos` | 只套用到本機 | `npm run db:remote` |
 | 部署失敗，說找不到 database | `database_id` 還是 `PASTE_YOUR_...` | 填入 `npx wrangler d1 create` 印出的 UUID（`npm run check` 會先幫你擋下來） |
 | `The given origin is not allowed for the given client ID` | Google 那邊沒加這個網址 | 到憑證設定把網址加進「已授權的 JavaScript 來源」 |
@@ -470,6 +477,7 @@ npm run db:list
 | `npm run dev` | 本機開發伺服器 |
 | `npm run check` | 檢查 `wrangler.jsonc` 該換的值都換過了 |
 | `npm run deploy` | 部署。`predeploy` 會先套用組建變數，再跑 `check` |
+| `npm run upload` | 上傳版本但不切流量（預覽分支用）。同樣會先跑 `prepare:config` |
 | `npm run db:local` | 套用 migration 到本機 |
 | `npm run db:remote` | 套用 migration 到線上 |
 | `npm run db:list` | 查看線上最近 20 筆待辦 |
