@@ -18,12 +18,29 @@
 //      npx wrangler r2 bucket create <你的 bucket_name>
 //
 //  忘記換 database_id 的話，npm run deploy 會先擋下來並告訴你（見 npm run check）。
+//
+// ───────────────────────────────────────────────────────────────────────────
+//  不想把自己的值寫進這個檔案（例如 repo 要保持佔位字串給學生看）？
+//  在 Cloudflare 後台 Settings → Build →「Build variables and secrets」設定，
+//  部署時 scripts/apply-build-vars.mjs 會把它們填進來：
+//
+//      組建變數              覆寫這個欄位
+//      ──────────────────    ─────────────────────
+//      CF_WORKER_NAME    →   name
+//      D1_DATABASE_NAME  →   database_name
+//      D1_DATABASE_ID    →   database_id
+//      R2_BUCKET_NAME    →   bucket_name
+//      GOOGLE_CLIENT_ID  →   vars.GOOGLE_CLIENT_ID
+//
+//  沒設的欄位就沿用這個檔案裡原本的值。這幾個變數只在 Workers Builds 生效，
+//  在你自己電腦上不會改動這個檔案。
 // ═══════════════════════════════════════════════════════════════════════════
 
 {
   "$schema": "node_modules/wrangler/config-schema.json",
 
   // ── 你的 ── 部署後網址會是 https://cf-todo-demo.<你的子網域>.workers.dev
+  // 組建變數 CF_WORKER_NAME 可覆寫
   "name": "cf-todo-demo",
 
   // Worker 程式進入點。這支 Worker 只負責 /api/* 的請求。
@@ -56,6 +73,11 @@
     // Google Cloud Console 建立的 OAuth 2.0「用戶端 ID」。
     // 只需要用戶端 ID，本專案不使用用戶端密鑰。
     // 留空的話，頁面會改用本機示範帳號，一樣能完整操作 D1 與 R2。
+    //
+    // 組建變數 GOOGLE_CLIENT_ID 可覆寫。
+    // 注意：直接在後台的 Variables and Secrets 設同名變數是沒用的 ——
+    // 只要這一行還在，每次部署都會用這裡的值把它蓋回去
+    //（wrangler 預設會先清空 vars 再套用設定檔，除非加 --keep-vars）。
     "GOOGLE_CLIENT_ID": ""
   },
 
@@ -66,11 +88,13 @@
       "binding": "DB",
 
       // ── 你的 ── 改了這裡，建立資料庫的指令也要用同一個名字
+      // 組建變數 D1_DATABASE_NAME 可覆寫
       "database_name": "todo-db",
 
       // ── 你的，一定要換 ──
       // 執行 `npx wrangler d1 create todo-db`，把它印出來的 UUID 貼在這裡。
       // 資料庫已經建好的話，用 `npx wrangler d1 list` 也查得到。
+      // 組建變數 D1_DATABASE_ID 可覆寫（就不必把真值寫進這個檔案）
       "database_id": "PASTE_YOUR_D1_DATABASE_ID_HERE"
     }
   ],
@@ -83,6 +107,7 @@
 
       // ── 你的 ── R2 沒有 id，用名稱對應就行。
       // 用 `npx wrangler r2 bucket create todo-images` 建立。
+      // 組建變數 R2_BUCKET_NAME 可覆寫
       "bucket_name": "todo-images"
     }
   ],

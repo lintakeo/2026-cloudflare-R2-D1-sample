@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "check": "node scripts/check-setup.mjs",
-    "predeploy": "npm run check",
+    "predeploy": "node scripts/apply-build-vars.mjs && npm run check",
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply DB --local",
     "db:remote": "wrangler d1 migrations apply DB --remote",

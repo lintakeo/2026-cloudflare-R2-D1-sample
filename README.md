@@ -25,6 +25,7 @@ Cloudflare Workers + D1 + R2 的教學範例。單一頁面，同時是簡介與
 ├── migrations/
 │   └── 0001_create_todos.sql   # D1 的資料表定義
 ├── scripts/
+│   ├── apply-build-vars.mjs    # 把 Workers Builds 的組建變數填進設定檔
 │   └── check-setup.mjs         # 部署前檢查該換的值換了沒
 ├── src/
 │   └── index.js                # Worker：只處理 /api/*
@@ -166,6 +167,40 @@ git push -u origin main
 > 也在 CI 跑一次 —— 忘記換 `database_id` 的話，建置會直接停下來並告訴你原因，
 > 而不是部署成功、線上卻連不到資料庫。
 
+### 3.（選用）用組建變數代替寫死在設定檔
+
+同一個畫面往下捲，有一區 **Build variables and secrets**。在那裡設定以下變數，
+部署時就會自動填進 `wrangler.jsonc`，你的 repo 可以一直保持佔位字串：
+
+| 組建變數 | 覆寫 `wrangler.jsonc` 的欄位 | 值長什麼樣 |
+|---|---|---|
+| `D1_DATABASE_ID` | `database_id` | `npx wrangler d1 create` 印出的 UUID |
+| `D1_DATABASE_NAME` | `database_name` | 例如 `todo-db` |
+| `R2_BUCKET_NAME` | `bucket_name` | 例如 `todo-images` |
+| `CF_WORKER_NAME` | `name` | 例如 `cf-todo-demo` |
+| `GOOGLE_CLIENT_ID` | `vars.GOOGLE_CLIENT_ID` | `1234...apps.googleusercontent.com` |
+
+只設需要的就好，沒設的沿用設定檔原值。用一般的 **variable** 即可，這些都不是機密。
+
+> `GOOGLE_CLIENT_ID` 要特別注意：直接在後台的 **Variables and Secrets**（執行時那一區）設同名變數**沒有用**。
+> 只要 `wrangler.jsonc` 的 `vars` 還留著那一行，每次部署都會把後台設的值蓋回去 ——
+> wrangler 預設會先清空 vars 再套用設定檔裡的（除非加 `--keep-vars`）。
+> 走**組建變數**這條路就不會有這個問題，因為值是在部署前先寫進設定檔的。
+
+忘記名稱的話不用翻文件 —— 每次部署的輸出都會印出來：
+
+```
+· 沒有設定任何組建變數，沿用 wrangler.jsonc 原本的值。
+  可用的組建變數（Cloudflare 後台 → Settings → Build → Build variables and secrets）：
+      CF_WORKER_NAME    → 覆寫 wrangler.jsonc 的 name
+      D1_DATABASE_NAME  → 覆寫 wrangler.jsonc 的 database_name
+      D1_DATABASE_ID    → 覆寫 wrangler.jsonc 的 database_id
+      R2_BUCKET_NAME    → 覆寫 wrangler.jsonc 的 bucket_name
+      GOOGLE_CLIENT_ID  → 覆寫 wrangler.jsonc 的 GOOGLE_CLIENT_ID
+```
+
+運作細節與防呆設計見下面〈用 Workers Builds 的「組建變數」注入〉。
+
 ### 關於 migration
 
 Workers Builds **不會**自動套用 D1 migration。新增 migration 檔之後，記得在本機手動跑一次：
@@ -211,9 +246,11 @@ npm run db:remote
 
 ## 這些值可以放進環境變數嗎？
 
-`database_id`、`bucket_name` 這些**不行**，但你大概也不需要。
+簡短版：**設定檔本身不會去讀環境變數**，但你可以讓建置流程把值填進去 —— 本專案已經內建這個機制（往下看「用 Workers Builds 的組建變數注入」）。
 
-### 為什麼不行
+先講清楚為什麼不能直接放，這比記住結論有用。
+
+### 為什麼設定檔讀不到環境變數
 
 `wrangler.jsonc` 裡有兩種東西，它們活在**不同的時間點**：
 
@@ -231,7 +268,9 @@ npm run db:remote
   Bucket names must begin and end with an alphanumeric character...
 ```
 
-### 為什麼不需要
+而且 wrangler CLI 也沒有覆寫綁定的旗標 —— `wrangler deploy --help` 裡的 `--var` 只管執行時的 vars，`--name` 只管 Worker 名稱，D1 與 R2 的綁定完全沒有對應的選項。所以「設了組建變數就會生效」這件事不會自己發生，一定要有東西去讀它。
+
+### 而且多數情況你不需要藏
 
 因為這些值都不是機密：
 
@@ -242,6 +281,32 @@ npm run db:remote
 | `GOOGLE_CLIENT_ID` | 不是 | 設計上就是公開的，本來就會出現在瀏覽器裡 |
 
 整套東西裡唯一的機密是 **Cloudflare API token**，它存在 Cloudflare 的建置環境，從頭到尾不會進你的 repo。Cloudflare 官方範本也是直接把 `database_id` 提交進版控的。
+
+### 用 Workers Builds 的「組建變數」注入
+
+如果你想讓 repo 裡永遠保持佔位字串（給學生看），但自己的部署用真實的 UUID，
+可以用後台的 **Settings → Build → Build variables and secrets**。
+
+組建變數是**建置期間**的環境變數（跟執行時的 `vars` 是兩回事，Worker 裡讀不到）。
+但光是設了不會生效 —— 得有人把它填進設定檔，這就是 `scripts/apply-build-vars.mjs` 做的事。
+它掛在 `predeploy`，所以 Deploy command 用 `npm run deploy` 就會自動執行。
+
+| 組建變數 | 會覆寫 `wrangler.jsonc` 的 |
+|---|---|
+| `D1_DATABASE_ID` | `database_id` |
+| `D1_DATABASE_NAME` | `database_name` |
+| `R2_BUCKET_NAME` | `bucket_name` |
+| `CF_WORKER_NAME` | `name` |
+| `GOOGLE_CLIENT_ID` | `vars.GOOGLE_CLIENT_ID` |
+
+沒設的欄位就沿用設定檔原本的值，全部不設就完全不動。
+
+**這支腳本只在 Workers Builds 裡改檔案**（靠內建的 `WORKERS_CI=1` 判斷）。
+建置容器每次都是重新 checkout 的暫時副本，改它不會影響 repo。在自己電腦上執行時，
+就算你剛好有同名的環境變數，它也會拒絕動手並告訴你原因 —— 不會偷改你的 `wrangler.jsonc`。
+
+> `database_id` 不是機密，用一般的 build **variable** 就好，不必用 secret。
+> secret 適合真正的機密（第三方 API key 之類）。
 
 ### 如果還是想從設定檔裡拿掉
 
@@ -379,7 +444,7 @@ npm run db:list
 |------|-------|
 | `npm run dev` | 本機開發伺服器 |
 | `npm run check` | 檢查 `wrangler.jsonc` 該換的值都換過了 |
-| `npm run deploy` | 部署（會先自動跑 `check`） |
+| `npm run deploy` | 部署。`predeploy` 會先套用組建變數，再跑 `check` |
 | `npm run db:local` | 套用 migration 到本機 |
 | `npm run db:remote` | 套用 migration 到線上 |
 | `npm run db:list` | 查看線上最近 20 筆待辦 |

@@ -269,7 +269,10 @@ npx wrangler r2 bucket create todo-images</code></pre>
   "database_name": "todo-db",
   "database_id": "上一步印出來的那串 UUID"
 }]</code></pre>
-          <p class="step-note">R2 沒有 id，用 bucket 名稱對應就行。</p>
+          <p class="step-note">
+            R2 沒有 id，用 bucket 名稱對應就行。
+            不想把 UUID 寫進檔案的話，第 05 步的組建變數也可以代勞。
+          </p>
         </div>
       </li>
 
@@ -277,8 +280,12 @@ npx wrangler r2 bucket create todo-images</code></pre>
         <p class="step-no">03</p>
         <div class="step-body">
           <h3 class="step-title">建立資料表</h3>
-          <pre class="step-code"><code>npx wrangler d1 migrations apply todo-db --remote</code></pre>
-          <p class="step-note">少了 <code>--remote</code> 就只會套用到本機那份 SQLite，線上依然是空的 —— 這是最常見的錯誤。</p>
+          <pre class="step-code"><code>npm run db:remote
+# 等同 npx wrangler d1 migrations apply DB --remote</code></pre>
+          <p class="step-note">
+            少了 <code>--remote</code> 就只會套用到本機那份 SQLite，線上依然是空的 —— 這是最常見的錯誤。
+            指令裡的 <code>DB</code> 是 binding 名稱，不是資料庫名稱，所以你改資料庫名字時這行不用跟著改。
+          </p>
         </div>
       </li>
 
@@ -299,8 +306,25 @@ git push -u origin main</code></pre>
           <h3 class="step-title">在 Cloudflare 接上 repo</h3>
           <p class="step-note">
             後台 <strong>Workers &amp; Pages → Create → Workers → Import a repository</strong>，
-            選好 repo 後 build 指令留空、deploy 指令用 <code>npx wrangler deploy</code>。
+            選好 repo 後 build 指令留空，deploy 指令填 <code>npm run deploy</code>。
             接好之後，每次 push 到 main 都會自動部署。
+          </p>
+          <p class="step-note">
+            用 <code>npm run deploy</code> 而不是 <code>npx wrangler deploy</code>，是為了讓
+            <code>predeploy</code> 的設定檢查也在雲端跑一次 —— 忘記換 <code>database_id</code> 時
+            建置會直接停下來說明原因，而不是部署成功、線上卻連不到資料庫。
+          </p>
+          <p class="step-note">
+            同一頁的 <strong>Build variables and secrets</strong> 可以設
+            <code>D1_DATABASE_ID</code>、<code>D1_DATABASE_NAME</code>、<code>R2_BUCKET_NAME</code>、
+            <code>CF_WORKER_NAME</code>、<code>GOOGLE_CLIENT_ID</code>，
+            部署時會自動填進 <code>wrangler.jsonc</code>，repo 裡就不必放自己的值。
+          </p>
+          <p class="step-note">
+            <code>GOOGLE_CLIENT_ID</code> 要走這條路而不是後台的
+            <strong>Variables and Secrets</strong>（執行時那一區）—— 只要
+            <code>wrangler.jsonc</code> 的 <code>vars</code> 還留著那一行，
+            每次部署都會把後台設的值蓋回去。
           </p>
         </div>
       </li>
