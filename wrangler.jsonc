@@ -78,7 +78,7 @@
     // 注意：直接在後台的 Variables and Secrets 設同名變數是沒用的 ——
     // 只要這一行還在，每次部署都會用這裡的值把它蓋回去
     //（wrangler 預設會先清空 vars 再套用設定檔，除非加 --keep-vars）。
-    "GOOGLE_CLIENT_ID": ""
+    "GOOGLE_CLIENT_ID": "141850993535-bdmd42r26gbgbvq8gfjd503em7ipo29i.apps.googleusercontent.com"
   },
 
   // ── D1：存待辦文字（SQLite）────────────────────────────────────────────

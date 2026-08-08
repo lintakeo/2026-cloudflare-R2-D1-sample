@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx wrangler *)",
+      "Bash(env)",
+      "Bash(echo \"---exit $?\")",
+      "Read(//home/linta/.config/.wrangler/**)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} type=%{content_type} size=%{size_download}\\\\n\" https://cf-todo-demo.lintakeo.workers.dev/)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} type=%{content_type}\\\\n\" https://cf-todo-demo.lintakeo.workers.dev/app.js)",
+      "Bash(curl -s -w \"\\\\nstatus=%{http_code}\\\\n\" https://cf-todo-demo.lintakeo.workers.dev/api/nonexistent)",
+      "Bash(curl -s -D- https://cf-todo-demo.lintakeo.workers.dev/api/config)",
+      "Bash(git diff *)"
+    ]
+  }
+}
