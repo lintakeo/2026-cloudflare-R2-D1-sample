@@ -31,7 +31,6 @@ public/
   index.html                單頁 landing + Demo（zh-Hant）
   app.js                    前端 ES module：Google 登入、待辦 CRUD、圖片、Edge Trace 渲染
   styles.css                深色主題；每個綁定一個固定語意色（--c-assets/--c-worker/--c-d1/--c-r2）
-u/smoketest/<uuid>          空檔案，看起來是誤提交的本機測試殘留（與 R2 鍵前綴 u/ 同形），不屬於應用程式
 .claude/settings.local.json 作者本機的 Claude Code 權限設定
 ```
 
